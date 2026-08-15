@@ -230,6 +230,43 @@ main{flex:1;min-width:0;padding:40px 48px 80px}
 .note-textarea::placeholder{color:hsla(238,90%,78%,.3)}
 .note-save{margin-top:12px;display:flex;justify-content:flex-end}
 
+/* ── 翻牌轮播 ── */
+.nav-arrow{
+  position:fixed;top:50%;transform:translateY(-50%);z-index:25;
+  width:48px;height:48px;border-radius:50%;
+  border:1px solid hsla(238,100%,67%,.3);background:hsla(248,70%,6%,.6);backdrop-filter:blur(8px);
+  color:var(--violet-soft);display:flex;align-items:center;justify-content:center;
+  transition:all .25s;opacity:.55;
+}
+.nav-arrow:hover{opacity:1;border-color:hsla(238,100%,67%,.6);box-shadow:0 0 24px hsla(238,100%,67%,.35);color:var(--cream)}
+.nav-arrow:active{transform:translateY(-50%) scale(.92)}
+.nav-arrow svg{width:20px;height:20px}
+.nav-arrow.prev{left:calc(288px + 18px)}
+.nav-arrow.next{right:18px}
+@media(max-width:1023px){
+  .nav-arrow{width:40px;height:40px;opacity:.8}
+  .nav-arrow.prev{left:10px}
+  .nav-arrow.next{right:10px}
+}
+@keyframes slide-from-right{from{opacity:0;transform:translateX(48px)}to{opacity:1;transform:none}}
+@keyframes slide-from-left{from{opacity:0;transform:translateX(-48px)}to{opacity:1;transform:none}}
+.slide-next{animation:slide-from-right .45s cubic-bezier(.22,1,.36,1) both}
+.slide-prev{animation:slide-from-left .45s cubic-bezier(.22,1,.36,1) both}
+
+/* ── 卡面牌组标注 ── */
+.face-deck-badge{
+  margin:14px auto 0;width:fit-content;max-width:100%;
+  display:flex;align-items:center;gap:8px;border-radius:999px;
+  border:1px solid hsla(46,92%,57%,.35);background:hsla(46,92%,57%,.06);
+  padding:5px 16px;font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.25em;
+  color:hsla(46,92%,57%,.9);text-transform:uppercase;
+}
+.face-deck-badge .dot{width:5px;height:5px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px hsla(46,92%,57%,.8)}
+.face-counter{
+  margin-top:10px;text-align:center;font-family:"JetBrains Mono",monospace;
+  font-size:10px;letter-spacing:.34em;color:hsla(238,90%,78%,.45);
+}
+
 /* ── Toast ── */
 #toast{
   position:fixed;top:80px;left:50%;transform:translateX(-50%) translateY(-8px);z-index:50;
@@ -290,7 +327,9 @@ main{flex:1;min-width:0;padding:40px 48px 80px}
           <div class="face-glow"></div>
           <div class="face-frame" id="face-frame"></div>
         </div>
+        <div class="face-deck-badge" id="face-badge"></div>
         <div class="face-actions" id="face-actions"></div>
+        <div class="face-counter" id="face-counter"></div>
         <p class="face-hint" id="face-hint"></p>
       </div>
       <div id="detail-col"></div>
@@ -298,9 +337,17 @@ main{flex:1;min-width:0;padding:40px 48px 80px}
   </main>
 </div>
 
+<button class="nav-arrow prev" id="nav-prev" aria-label="上一张牌">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+</button>
+<button class="nav-arrow next" id="nav-next" aria-label="下一张牌">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+</button>
+
 <div id="toast"></div>
 
 <script>
+
 var TAROT = (() => {
   var __defProp = Object.defineProperty;
   var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -2175,8 +2222,10 @@ var TAROT = (() => {
   return __toCommonJS(index_exports);
 })();
 
+
 </script>
 <script>
+
 /* ═══════════ 塔罗密卷 · 单机版（localStorage 持久化） ═══════════ */
 (function () {
   "use strict";
@@ -2243,6 +2292,7 @@ var TAROT = (() => {
     deckCreating: false,
     renamingId: null,
     sidebarOpen: false,
+    slideDir: 0, // 1=下一张(自右滑入) -1=上一张(自左滑入) 0=淡入
   };
 
   const $ = (id) => document.getElementById(id);
@@ -2367,14 +2417,24 @@ var TAROT = (() => {
     );
   }
 
-  function selectCard(key) {
+  function selectCard(key, dir) {
     state.cardKey = key;
     state.orientation = "upright";
     state.editing = false;
     state.draft = null;
     state.sidebarOpen = false;
+    state.slideDir = dir || 0;
     renderAll();
+    state.slideDir = 0;
     if (window.innerWidth < 1024) window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  /* 轮播：上一张 / 下一张（循环） */
+  function goCard(dir) {
+    if (state.editing && !confirm("正在编纂中，切换牌面将放弃未保存的修改。继续？")) return;
+    const idx = ALL_CARDS.findIndex((c) => c.key === state.cardKey);
+    const next = (idx + dir + ALL_CARDS.length) % ALL_CARDS.length;
+    selectCard(ALL_CARDS[next].key, dir);
   }
 
   /* ── 牌组菜单 ── */
@@ -2525,6 +2585,11 @@ var TAROT = (() => {
       });
       actions.appendChild(del);
     }
+
+    /* 牌组标注 + 位置计数 */
+    $("face-badge").innerHTML = `<span class="dot"></span>${esc(currentDeck()?.name ?? "…")}${img ? "" : " · 待上传"}`;
+    const pos = ALL_CARDS.findIndex((c) => c.key === state.cardKey) + 1;
+    $("face-counter").textContent = `${String(pos).padStart(2, "0")} / ${ALL_CARDS.length} · ◂ 滑动或点按两侧箭头翻牌 ▸`;
 
     $("face-hint").innerHTML = `卡面将保存在当前牌组「${esc(currentDeck()?.name ?? "…")}」之下，<br/>切换牌组即可为同一张牌挂上不同的卡面。<br/><span style="color:hsla(238,90%,78%,.3)">静态版数据保存在此浏览器中。</span>`;
   }
@@ -2751,9 +2816,9 @@ var TAROT = (() => {
     renderDetail();
     renderEditActions();
     const grid = $("main-grid");
-    grid.classList.remove("enter");
+    grid.classList.remove("enter", "slide-next", "slide-prev");
     void grid.offsetWidth;
-    grid.classList.add("enter");
+    grid.classList.add(state.slideDir === 1 ? "slide-next" : state.slideDir === -1 ? "slide-prev" : "enter");
   }
 
   /* ── 全局事件 ── */
@@ -2793,8 +2858,34 @@ var TAROT = (() => {
     }
   });
 
+  /* ── 轮播导航：箭头 / 触屏滑动 / 键盘 ── */
+  $("nav-prev").addEventListener("click", () => goCard(-1));
+  $("nav-next").addEventListener("click", () => goCard(1));
+
+  let touchX = null, touchY = null;
+  document.addEventListener("touchstart", (e) => {
+    if (e.target.closest("input, textarea, aside, .deck-menu")) { touchX = null; return; }
+    touchX = e.touches[0].clientX;
+    touchY = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener("touchend", (e) => {
+    if (touchX == null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    const dy = e.changedTouches[0].clientY - touchY;
+    touchX = null;
+    // 横向滑动超过 60px 且明显横向（避免误触滚动）
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) goCard(dx < 0 ? 1 : -1);
+  }, { passive: true });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.target.closest("input, textarea")) return;
+    if (e.key === "ArrowLeft") goCard(-1);
+    if (e.key === "ArrowRight") goCard(1);
+  });
+
   renderAll();
 })();
+
 
 </script>
 </body>
