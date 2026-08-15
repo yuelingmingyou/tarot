@@ -148,6 +148,14 @@ main{flex:1;min-width:0;padding:40px 48px 80px}
 .deck-input-row input{flex:1;min-width:0;border-radius:6px;border:1px solid hsla(238,100%,67%,.4);background:transparent;padding:6px 8px;font-size:14px;outline:none}
 .deck-input-row button{color:var(--gold)}
 
+/* ── 数据迁移菜单 ── */
+.data-item{display:flex;align-items:center;gap:10px;width:100%;border-radius:8px;padding:9px 12px;font-size:13px;letter-spacing:.08em;color:hsla(48,33%,94%,.75);transition:background .2s;text-align:left}
+.data-item:hover{background:hsla(238,100%,67%,.1);color:var(--cream)}
+.data-item svg{width:15px;height:15px;flex-shrink:0;color:hsl(46,92%,57%);margin-top:2px;align-self:flex-start}
+.data-item small{display:block;font-size:10px;color:hsla(238,90%,78%,.4);letter-spacing:.05em;margin-top:3px}
+.data-note{padding:8px 12px 4px;font-size:10px;line-height:1.7;color:hsla(238,90%,78%,.35);border-top:1px solid hsla(238,100%,67%,.12);margin-top:6px}
+@media(max-width:640px){.data-btn-label{display:none}}
+
 /* ── 主区 ── */
 .detail-grid{display:grid;grid-template-columns:340px minmax(0,1fr);gap:64px}
 @media(max-width:1279px){.detail-grid{gap:40px}}
@@ -307,6 +315,25 @@ main{flex:1;min-width:0;padding:40px 48px 80px}
           <div id="deck-list" style="max-height:256px;overflow-y:auto"></div>
           <div style="border-top:1px solid hsla(238,100%,67%,.12);margin-top:4px;padding-top:8px" id="deck-new-wrap"></div>
         </div>
+      </div>
+      <div style="position:relative">
+        <button id="data-btn" class="pill-btn ghost" title="导入 / 导出">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span class="data-btn-label">迁移</span>
+        </button>
+        <div id="data-menu" class="deck-menu" style="display:none;width:264px">
+          <div class="mono-label" style="padding:8px 12px;font-size:9px;color:hsla(46,92%,57%,.7)">数据迁移 · Archive</div>
+          <button class="data-item" id="export-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span>导出密卷<small>将全部数据下载为 JSON 备份</small></span>
+          </button>
+          <button class="data-item" id="import-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span>导入密卷<small>从备份文件恢复（覆盖当前数据）</small></span>
+          </button>
+          <p class="data-note">备份包含牌组、已上传的卡面、你的编纂与私人笔记，可用于换设备或换浏览器时迁移。</p>
+        </div>
+        <input type="file" id="import-file" accept=".json,application/json" style="display:none" />
       </div>
       <div id="edit-actions"></div>
     </div>
@@ -2296,6 +2323,7 @@ var TAROT = (() => {
     deckCreating: false,
     renamingId: null,
     sidebarOpen: false,
+    dataMenuOpen: false,
     faceDir: 0, // 卡面轮播方向：1=下一牌组(自右滑入) -1=上一牌组 0=不动画
   };
 
@@ -2837,6 +2865,76 @@ var TAROT = (() => {
     wrap.append(save, reset, cancel);
   }
 
+  /* ── 数据迁移：导出 / 导入 ── */
+  function exportData() {
+    const images = {};
+    let imgCount = 0;
+    for (const d of decks) {
+      const imgs = loadJSON(kImages(d.id), {});
+      if (Object.keys(imgs).length) {
+        images[d.id] = imgs;
+        imgCount += Object.keys(imgs).length;
+      }
+    }
+    const payload = {
+      app: "tarot-arcana-codex",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      decks,
+      notes,
+      images,
+    };
+    const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    a.href = URL.createObjectURL(blob);
+    a.download = `塔罗密卷-备份-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast(`密卷已导出（含 ${imgCount} 张卡面）`);
+  }
+
+  function importData(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      let data;
+      try { data = JSON.parse(reader.result); } catch { toast("导入失败：不是有效的 JSON 文件"); return; }
+      if (!data || !Array.isArray(data.decks) || !data.decks.length ||
+          data.decks.some((d) => !d || typeof d.id !== "number" || !d.name)) {
+        toast("导入失败：文件不是有效的密卷备份");
+        return;
+      }
+      const newNotes = data.notes && typeof data.notes === "object" ? data.notes : {};
+      const newImages = data.images && typeof data.images === "object" ? data.images : {};
+      const imgCount = Object.values(newImages).reduce(
+        (n, m) => n + (m && typeof m === "object" ? Object.keys(m).length : 0), 0);
+      const sizeMB = (String(reader.result).length / 1048576).toFixed(1);
+      if (!confirm(`备份内容：${data.decks.length} 个牌组 · ${Object.keys(newNotes).length} 条编纂/笔记 · ${imgCount} 张卡面（文件约 ${sizeMB} MB）\n\n导入将覆盖当前浏览器中的全部塔罗数据，确认继续？`)) return;
+      try {
+        for (const d of decks) localStorage.removeItem(kImages(d.id));
+        for (const [deckId, imgs] of Object.entries(newImages)) {
+          if (imgs && typeof imgs === "object") localStorage.setItem(kImages(deckId), JSON.stringify(imgs));
+        }
+        localStorage.setItem(K_DECKS, JSON.stringify(data.decks));
+        localStorage.setItem(K_NOTES, JSON.stringify(newNotes));
+      } catch {
+        toast("存储空间不足，导入中止——请清理浏览器数据或精简卡面后重试");
+        return;
+      }
+      toast("密卷已载入，正在重启星轨…");
+      setTimeout(() => location.reload(), 900);
+    };
+    reader.onerror = () => toast("文件读取失败");
+    reader.readAsText(file);
+  }
+
+  function closeDataMenu() {
+    state.dataMenuOpen = false;
+    $("data-menu").style.display = "none";
+  }
+
   /* ── 总渲染 ── */
   function renderAll() {
     renderSidebar();
@@ -2867,6 +2965,30 @@ var TAROT = (() => {
       state.renamingId = null;
       renderDeckMenu();
     }
+    if (state.dataMenuOpen && !$("data-menu").contains(e.target) && !$("data-btn").contains(e.target)) {
+      closeDataMenu();
+    }
+  });
+  $("data-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    state.dataMenuOpen = !state.dataMenuOpen;
+    $("data-menu").style.display = state.dataMenuOpen ? "block" : "none";
+    if (state.dataMenuOpen && state.deckMenuOpen) {
+      state.deckMenuOpen = false;
+      state.deckCreating = false;
+      state.renamingId = null;
+      renderDeckMenu();
+    }
+  });
+  $("export-btn").addEventListener("click", () => {
+    closeDataMenu();
+    exportData();
+  });
+  $("import-btn").addEventListener("click", () => $("import-file").click());
+  $("import-file").addEventListener("change", (e) => {
+    const f = e.target.files[0];
+    if (f) importData(f);
+    e.target.value = "";
   });
   $("menu-btn").addEventListener("click", () => {
     state.sidebarOpen = !state.sidebarOpen;
