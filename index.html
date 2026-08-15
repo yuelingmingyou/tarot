@@ -25,6 +25,7 @@ body{
     var(--ink);
   font-family:"Noto Serif SC","Songti SC","PingFang SC","Microsoft YaHei",serif;
   -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
 }
 button{font-family:inherit;cursor:pointer;background:none;border:none;color:inherit}
 input,textarea,select{font-family:inherit;color:var(--cream)}
@@ -60,7 +61,7 @@ header{
   display:inline-flex;align-items:center;gap:8px;border-radius:999px;
   border:1px solid hsla(238,100%,67%,.35);background:hsla(248,70%,6%,.7);
   padding:8px 16px;font-size:12px;letter-spacing:.2em;color:var(--violet-soft);
-  transition:all .25s;
+  transition:all .25s;white-space:nowrap;
 }
 .pill-btn:hover{border-color:hsla(238,100%,67%,.6);box-shadow:0 0 24px hsla(238,100%,67%,.35)}
 .pill-btn.solid{background:hsla(238,100%,67%,.25);color:var(--cream)}
@@ -155,6 +156,15 @@ main{flex:1;min-width:0;padding:40px 48px 80px}
 .data-item small{display:block;font-size:10px;color:hsla(238,90%,78%,.4);letter-spacing:.05em;margin-top:3px}
 .data-note{padding:8px 12px 4px;font-size:10px;line-height:1.7;color:hsla(238,90%,78%,.35);border-top:1px solid hsla(238,100%,67%,.12);margin-top:6px}
 @media(max-width:640px){.data-btn-label{display:none}}
+
+/* ── 移动端顶栏：窄屏换行防溢出；编辑态收起牌组/迁移按钮 ── */
+@media(max-width:640px){
+  .header-inner{flex-wrap:wrap;height:auto;row-gap:8px;padding-top:8px;padding-bottom:8px}
+  .brand{margin-right:auto}
+  .header-actions{margin-left:auto;gap:8px}
+  #deck-btn-name{max-width:96px !important}
+  .header-inner.editing #deck-wrap,.header-inner.editing #data-wrap{display:none}
+}
 
 /* ── 主区 ── */
 .detail-grid{display:grid;grid-template-columns:340px minmax(0,1fr);gap:64px}
@@ -304,7 +314,7 @@ main{flex:1;min-width:0;padding:40px 48px 80px}
       </div>
     </div>
     <div class="header-actions">
-      <div style="position:relative">
+      <div style="position:relative" id="deck-wrap">
         <button id="deck-btn" class="pill-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="hsl(46,92%,57%)" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
           <span id="deck-btn-name" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">牌组</span>
@@ -316,7 +326,7 @@ main{flex:1;min-width:0;padding:40px 48px 80px}
           <div style="border-top:1px solid hsla(238,100%,67%,.12);margin-top:4px;padding-top:8px" id="deck-new-wrap"></div>
         </div>
       </div>
-      <div style="position:relative">
+      <div style="position:relative" id="data-wrap">
         <button id="data-btn" class="pill-btn ghost" title="导入 / 导出">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <span class="data-btn-label">迁移</span>
@@ -2804,6 +2814,7 @@ var TAROT = (() => {
 
   /* ── 编纂按钮区 ── */
   function renderEditActions() {
+    document.querySelector(".header-inner").classList.toggle("editing", state.editing);
     const wrap = $("edit-actions");
     wrap.innerHTML = "";
     wrap.style.display = "flex";
