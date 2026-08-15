@@ -162,8 +162,7 @@ main{flex:1;min-width:0;padding:40px 48px 80px}
   .header-inner{flex-wrap:wrap;height:auto;row-gap:8px;padding-top:8px;padding-bottom:8px}
   .brand{margin-right:auto}
   .header-actions{margin-left:auto;gap:8px}
-  #deck-btn-name{max-width:96px !important}
-  .header-inner.editing #deck-wrap,.header-inner.editing #data-wrap{display:none}
+  .header-inner.editing #data-wrap{display:none}
 }
 
 /* ── 主区 ── */
@@ -198,7 +197,8 @@ main{flex:1;min-width:0;padding:40px 48px 80px}
 .fp-en{font-size:14px;letter-spacing:.18em;color:hsla(238,90%,78%,.7);margin-top:8px}
 .fp-deck{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.34em;text-transform:uppercase;color:hsla(238,90%,78%,.45)}
 .face-vignette{position:absolute;top:0;left:0;right:0;height:64px;background:linear-gradient(to bottom,rgba(0,0,0,.5),transparent);pointer-events:none}
-.face-actions{margin-top:16px;display:flex;align-items:center;justify-content:center;gap:12px}
+.face-toolbar{margin-top:16px;display:flex;align-items:center;justify-content:center;gap:12px}
+.face-actions{display:flex;align-items:center;justify-content:center;gap:12px}
 .face-hint{margin-top:20px;text-align:center;font-size:12px;line-height:1.8;color:hsla(238,90%,78%,.4)}
 
 /* ── 详情 ── */
@@ -314,18 +314,6 @@ main{flex:1;min-width:0;padding:40px 48px 80px}
       </div>
     </div>
     <div class="header-actions">
-      <div style="position:relative" id="deck-wrap">
-        <button id="deck-btn" class="pill-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="hsl(46,92%,57%)" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-          <span id="deck-btn-name" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">牌组</span>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition:transform .3s" id="deck-chevron"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <div id="deck-menu" class="deck-menu enter" style="display:none">
-          <div class="mono-label" style="padding:8px 12px;font-size:9px;color:hsla(46,92%,57%,.7)">牌组 · Decks</div>
-          <div id="deck-list" style="max-height:256px;overflow-y:auto"></div>
-          <div style="border-top:1px solid hsla(238,100%,67%,.12);margin-top:4px;padding-top:8px" id="deck-new-wrap"></div>
-        </div>
-      </div>
       <div style="position:relative" id="data-wrap">
         <button id="data-btn" class="pill-btn ghost" title="导入 / 导出">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -377,7 +365,21 @@ main{flex:1;min-width:0;padding:40px 48px 80px}
         </div>
         <div class="face-deck-badge" id="face-badge"></div>
         <div class="face-dots" id="face-dots"></div>
-        <div class="face-actions" id="face-actions"></div>
+        <div class="face-toolbar">
+          <div class="face-actions" id="face-actions"></div>
+          <div style="position:relative" id="deck-wrap">
+            <button id="deck-btn" class="pill-btn ghost">
+              <svg viewBox="0 0 24 24" fill="none" stroke="hsl(46,92%,57%)" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+              <span>牌组</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition:transform .3s" id="deck-chevron"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div id="deck-menu" class="deck-menu enter" style="display:none">
+              <div class="mono-label" style="padding:8px 12px;font-size:9px;color:hsla(46,92%,57%,.7)">牌组 · Decks</div>
+              <div id="deck-list" style="max-height:256px;overflow-y:auto"></div>
+              <div style="border-top:1px solid hsla(238,100%,67%,.12);margin-top:4px;padding-top:8px" id="deck-new-wrap"></div>
+            </div>
+          </div>
+        </div>
         <p class="face-hint" id="face-hint"></p>
       </div>
       <div id="detail-col"></div>
@@ -2483,7 +2485,6 @@ var TAROT = (() => {
 
   /* ── 牌组菜单 ── */
   function renderDeckMenu() {
-    $("deck-btn-name").textContent = currentDeck()?.name ?? "选择牌组";
     $("deck-chevron").style.transform = state.deckMenuOpen ? "rotate(180deg)" : "";
     const menu = $("deck-menu");
     menu.style.display = state.deckMenuOpen ? "block" : "none";
