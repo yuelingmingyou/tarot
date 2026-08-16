@@ -2336,7 +2336,8 @@ var TAROT = (() => {
     renamingId: null,
     sidebarOpen: false,
     dataMenuOpen: false,
-    faceDir: 0, // 卡面轮播方向：1=下一牌组(自右滑入) -1=上一牌组 0=不动画
+    faceIdx: 0, // 当前卡面在其牌组内的序号
+    faceDir: 0, // 卡面轮播方向：1=下一张(自右滑入) -1=上一张 0=不动画
   };
 
   const $ = (id) => document.getElementById(id);
@@ -2384,8 +2385,31 @@ var TAROT = (() => {
     } catch {}
     return { ...base, ...ov };
   }
+  function getDeckImages(deckId) {
+    const raw = loadJSON(kImages(deckId), {});
+    const out = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (Array.isArray(v)) out[k] = v.filter((s) => typeof s === "string");
+      else if (typeof v === "string") out[k] = [v]; // 旧版「一牌组一张」数据自动迁移
+    }
+    return out;
+  }
   function getImages() {
-    return loadJSON(kImages(state.deckId), {});
+    return getDeckImages(state.deckId);
+  }
+  /* 当前牌在所有牌组下的卡面，拍平为轮播序列；没有卡面的牌组占一个「待上传」位 */
+  const MAX_FACES = 10; // 每张牌最多上传 10 张卡面
+  function getFaces() {
+    const faces = [];
+    for (const d of decks) {
+      const arr = getDeckImages(d.id)[state.cardKey] || [];
+      if (arr.length === 0) faces.push({ deckId: d.id, idx: 0, src: null });
+      else arr.forEach((src, idx) => faces.push({ deckId: d.id, idx, src }));
+    }
+    return faces;
+  }
+  function totalFaceCount() {
+    return decks.reduce((n, d) => n + ((getDeckImages(d.id)[state.cardKey] || []).length), 0);
   }
   function currentDeck() {
     return decks.find((d) => d.id === state.deckId);
@@ -2463,6 +2487,7 @@ var TAROT = (() => {
 
   function selectCard(key) {
     state.cardKey = key;
+    state.faceIdx = 0;
     state.orientation = "upright";
     state.editing = false;
     state.draft = null;
@@ -2471,12 +2496,15 @@ var TAROT = (() => {
     if (window.innerWidth < 1024) window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  /* 卡面轮播：同一张牌，循环切换牌组 */
+  /* 卡面轮播：同一张牌，循环切换所有已上传的卡面（含各牌组的待上传位） */
   function goDeck(dir) {
-    if (decks.length < 2) return;
-    const idx = decks.findIndex((d) => d.id === state.deckId);
-    const next = decks[(idx + dir + decks.length) % decks.length];
-    state.deckId = next.id;
+    const faces = getFaces();
+    if (faces.length < 2) return;
+    let pos = faces.findIndex((f) => f.deckId === state.deckId && f.idx === state.faceIdx);
+    if (pos < 0) pos = 0;
+    const next = faces[(pos + dir + faces.length) % faces.length];
+    state.deckId = next.deckId;
+    state.faceIdx = next.idx;
     state.faceDir = dir;
     renderDeckMenu();
     renderFace();
@@ -2533,6 +2561,7 @@ var TAROT = (() => {
           decks = decks.filter((x) => x.id !== d.id);
           saveJSON(K_DECKS, decks);
           if (state.deckId === d.id) state.deckId = decks[0].id;
+          state.faceIdx = 0;
           renderAll();
           toast("牌组已消解");
         });
@@ -2550,6 +2579,7 @@ var TAROT = (() => {
         decks.push({ id, name });
         saveJSON(K_DECKS, decks);
         state.deckId = id;
+        state.faceIdx = 0;
         state.deckCreating = false;
         state.deckMenuOpen = false;
         renderAll();
@@ -2584,7 +2614,14 @@ var TAROT = (() => {
   /* ── 卡面 ── */
   function renderFace() {
     const card = getMerged(state.cardKey);
-    const img = getImages()[state.cardKey];
+    const faces = getFaces();
+    let pos = faces.findIndex((f) => f.deckId === state.deckId && f.idx === state.faceIdx);
+    if (pos < 0) pos = 0;
+    const cur = faces[pos];
+    state.deckId = cur.deckId;
+    state.faceIdx = cur.idx;
+    const img = cur.src;
+    const deckFaces = getDeckImages(cur.deckId)[state.cardKey] || [];
     const frame = $("face-frame");
     if (img) {
       frame.innerHTML = `<img src="${img}" alt="${esc(card.nameCn)}" /><div class="face-vignette"></div>`;
@@ -2611,40 +2648,48 @@ var TAROT = (() => {
     const up = document.createElement("label");
     up.className = "pill-btn";
     up.style.cursor = "pointer";
-    up.innerHTML = `${img ? "更换卡面" : "上传卡面"}<input type="file" accept="image/*" style="display:none" />`;
+    up.innerHTML = `${img ? "加传卡面" : "上传卡面"}<input type="file" accept="image/*" style="display:none" />`;
     up.querySelector("input").addEventListener("change", (e) => {
       const f = e.target.files[0];
       if (f) uploadImage(f);
     });
     actions.appendChild(up);
-    if (img && state.editing) {
+    if (img) {
       const del = document.createElement("button");
       del.className = "pill-btn danger";
       del.textContent = "移除卡面";
       del.addEventListener("click", () => {
         const imgs = getImages();
-        delete imgs[state.cardKey];
+        const arr = imgs[state.cardKey] || [];
+        arr.splice(state.faceIdx, 1);
+        if (arr.length) imgs[state.cardKey] = arr;
+        else delete imgs[state.cardKey];
         saveJSON(kImages(state.deckId), imgs);
+        state.faceIdx = 0;
         renderFace();
         toast("卡面已移除");
       });
       actions.appendChild(del);
     }
 
-    /* 牌组标注 + 轮播圆点 */
-    $("face-badge").innerHTML = `<span class="dot"></span>${esc(currentDeck()?.name ?? "…")}${img ? "" : " · 待上传"}`;
+    /* 牌组标注（同组多张时显示序号） + 轮播圆点（每个轮播位一颗） */
+    const deckName = decks.find((d) => d.id === cur.deckId)?.name ?? "…";
+    const extra = img ? (deckFaces.length > 1 ? ` · ${cur.idx + 1}/${deckFaces.length}` : "") : " · 待上传";
+    $("face-badge").innerHTML = `<span class="dot"></span>${esc(deckName)}${extra}`;
     const dots = $("face-dots");
-    dots.innerHTML = decks
-      .map((d) => `<button class="d ${d.id === state.deckId ? "on" : ""}" data-deck="${d.id}" title="${esc(d.name)}"></button>`)
+    dots.innerHTML = faces
+      .map((f, i) => {
+        const nm = decks.find((d) => d.id === f.deckId)?.name ?? "";
+        return `<button class="d ${i === pos ? "on" : ""}" data-i="${i}" title="${esc(nm)}${f.src ? ` · ${f.idx + 1}` : ""}"></button>`;
+      })
       .join("");
     dots.querySelectorAll(".d").forEach((b) =>
       b.addEventListener("click", () => {
-        const target = Number(b.dataset.deck);
-        if (target === state.deckId) return;
-        const from = decks.findIndex((d) => d.id === state.deckId);
-        const to = decks.findIndex((d) => d.id === target);
-        state.deckId = target;
-        state.faceDir = to > from ? 1 : -1;
+        const target = Number(b.dataset.i);
+        if (target === pos) return;
+        state.deckId = faces[target].deckId;
+        state.faceIdx = faces[target].idx;
+        state.faceDir = target > pos ? 1 : -1;
         renderDeckMenu();
         renderFace();
         state.faceDir = 0;
@@ -2659,15 +2704,19 @@ var TAROT = (() => {
       frameWrap.classList.add(state.faceDir === 1 ? "slide-next" : "slide-prev");
     }
 
-    $("face-hint").innerHTML = `◂ 滑动卡面或点按两侧箭头，即可为同一张牌 ▸<br/>切换「${esc(currentDeck()?.name ?? "…")}」等不同牌组的卡面。<br/><span style="color:hsla(238,90%,78%,.3)">上传的卡面保存在当前牌组之下；静态版数据保存在此浏览器中。</span>`;
+    $("face-hint").innerHTML = `◂ 滑动卡面或点按两侧箭头，即可为同一张牌 ▸<br/>切换不同牌组、不同卡面（每张牌最多 ${MAX_FACES} 张）。<br/><span style="color:hsla(238,90%,78%,.3)">上传的卡面归入当前所在牌组；静态版数据保存在此浏览器中。</span>`;
   }
 
   function uploadImage(file) {
+    if (totalFaceCount() >= MAX_FACES) {
+      toast(`同一张牌最多镌刻 ${MAX_FACES} 张卡面`);
+      return;
+    }
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const maxDim = 760;
+      const maxDim = 640;
       const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
       const w = Math.round(img.width * scale);
       const h = Math.round(img.height * scale);
@@ -2678,12 +2727,17 @@ var TAROT = (() => {
       ctx.fillStyle = "#0a0620";
       ctx.fillRect(0, 0, w, h);
       ctx.drawImage(img, 0, 0, w, h);
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
       const imgs = getImages();
-      imgs[state.cardKey] = dataUrl;
+      const arr = imgs[state.cardKey] || [];
+      arr.push(dataUrl);
+      imgs[state.cardKey] = arr;
       if (saveJSON(kImages(state.deckId), imgs)) {
+        state.faceIdx = arr.length - 1; // 镌刻后滑向新卡面
+        state.faceDir = 1;
         renderFace();
-        toast("卡面已镌刻");
+        state.faceDir = 0;
+        toast(`卡面已镌刻（${totalFaceCount()}/${MAX_FACES}）`);
       }
     };
     img.onerror = () => {
@@ -2882,10 +2936,11 @@ var TAROT = (() => {
     const images = {};
     let imgCount = 0;
     for (const d of decks) {
-      const imgs = loadJSON(kImages(d.id), {});
-      if (Object.keys(imgs).length) {
+      const imgs = getDeckImages(d.id);
+      const n = Object.values(imgs).reduce((m, a) => m + a.length, 0);
+      if (n) {
         images[d.id] = imgs;
-        imgCount += Object.keys(imgs).length;
+        imgCount += n;
       }
     }
     const payload = {
@@ -2921,7 +2976,9 @@ var TAROT = (() => {
       const newNotes = data.notes && typeof data.notes === "object" ? data.notes : {};
       const newImages = data.images && typeof data.images === "object" ? data.images : {};
       const imgCount = Object.values(newImages).reduce(
-        (n, m) => n + (m && typeof m === "object" ? Object.keys(m).length : 0), 0);
+        (n, m) => n + (m && typeof m === "object"
+          ? Object.values(m).reduce((x, v) => x + (Array.isArray(v) ? v.length : (typeof v === "string" ? 1 : 0)), 0)
+          : 0), 0);
       const sizeMB = (String(reader.result).length / 1048576).toFixed(1);
       if (!confirm(`备份内容：${data.decks.length} 个牌组 · ${Object.keys(newNotes).length} 条编纂/笔记 · ${imgCount} 张卡面（文件约 ${sizeMB} MB）\n\n导入将覆盖当前浏览器中的全部塔罗数据，确认继续？`)) return;
       try {
